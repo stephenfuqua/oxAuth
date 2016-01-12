@@ -36,6 +36,7 @@ import javax.ws.rs.core.SecurityContext;
 import java.security.SignatureException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Provides interface for token REST web services
@@ -79,9 +80,13 @@ public class TokenRestWebServiceImpl implements TokenRestWebService {
                                        String assertion, String refreshToken, String oxAuthExchangeToken,
                                        String clientId, String clientSecret,
                                        HttpServletRequest request, SecurityContext sec) {
+    	
+    	@SuppressWarnings("unchecked")
+		Map<String,String[]> parameterMap = request.getParameterMap();
+		
         log.debug(
                 "Attempting to request access token: grantType = {0}, code = {1}, redirectUri = {2}, username = {3}, refreshToken = {4}, clientId = {5}, ExtraParams = {6}, isSecure = {7}",
-                grantType, code, redirectUri, username, refreshToken, clientId, request.getParameterMap(), sec.isSecure());
+                grantType, code, redirectUri, username, refreshToken, clientId, parameterMap, sec.isSecure());
         final Mode serverMode = ConfigurationFactory.instance().getConfiguration().getModeEnum();
         scope = ServerUtil.urlDecode(scope); // it may be encoded in uma case
         ResponseBuilder builder = Response.ok();
@@ -220,10 +225,18 @@ public class TokenRestWebServiceImpl implements TokenRestWebService {
                     }
 
                     if (user == null) {
-                        boolean authenticated = authenticationService.authenticate(username, password);
-                        if (authenticated) {
-                            user = credentials.getUser();
-                        }
+                    	if (parameterMap.containsKey("org_id")) {
+                    		boolean authenticated = authenticationService.authenticateForOrg(username, password, parameterMap.get("org_id")[0]);
+	                        if (authenticated) {
+	                            user = credentials.getUser();
+	                        }
+                    	}
+                    	else {
+	                        boolean authenticated = authenticationService.authenticate(username, password);
+	                        if (authenticated) {
+	                            user = credentials.getUser();
+	                        }
+                    	}
                     }
 
                     if (user != null) {
