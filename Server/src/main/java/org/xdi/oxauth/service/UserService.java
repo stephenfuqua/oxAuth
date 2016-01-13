@@ -107,10 +107,10 @@ public class UserService {
 	}
 
     /**
-     * Lookup a user in LDAP using a configurable directory name (base DN).
+     * Lookup a user in LDAP under an alternate organization.
      *
      * @param userId The user's identifier.
-     * @param orgId The organization under which to search.
+     * @param orgId The identifier for the organization under which to search.
      * @param returnAttributes LDAP attributes to select.
      * @return Instance of <code>User</code>.
      */
@@ -123,35 +123,18 @@ public class UserService {
 			return null;
 		}
 
-		Filter userUidFilter = Filter.createEqualityFilter("uid", userId);
-		
-		String originalDn = ConfigurationFactory.instance().getBaseDn().getPeople();
-
 		// Replace the organization in the default directory name with the orgId
 		// For example, need to replace	o=@!16AF.2902.8608.F8D1!0001!0E98.1F6C
+		String originalDn = ConfigurationFactory.instance().getBaseDn().getPeople();
 		String pattern = "o=@![0-9A-Z\\.!]{34}";
-		String directoryName = originalDn.replaceAll(pattern, "o="+orgId);
+		String directoryName = originalDn.replaceAll(pattern, "o=" + orgId);
 		log.debug("Search in directory name: " + directoryName);
-		
-		List<User> entries = ldapEntryManager.findEntries(directoryName, User.class, returnAttributes, userUidFilter);
-		log.debug("Found {0} entries for user id = {1}", entries.size(), userId);
 
-		if (entries.size() > 0) {
-			return entries.get(0);
-		} else {
-			return null;
-		}
+		return getUserInDirectory(userId, directoryName, returnAttributes);
 	}
 
-    /**
-     * Lookup a user in LDAP using a configurable directory name (base DN).
-     *
-     * @param userId The user's identifier.
-     * @param directoryName The directory under which to search.
-     * @param returnAttributes LDAP attributes to select.
-     * @return Instance of <code>User</code>.
-     */
-	public User getUserInDirectory(String userId, String directoryName, String... returnAttributes) {
+
+	private User getUserInDirectory(String userId, String directoryName, String... returnAttributes) {
 		log.debug("Getting user information from LDAP: userId = {0} under directory name {1}", userId, directoryName);
 
 		if (StringHelper.isEmpty(userId) ||

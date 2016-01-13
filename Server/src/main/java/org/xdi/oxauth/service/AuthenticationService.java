@@ -99,6 +99,12 @@ public class AuthenticationService {
     @In
     private MetricService metricService;
 
+    private class AuthenticationHelper{ 
+    	public boolean Authenticate(String userName, String password, String orgId) {
+    		return false;
+    	}
+    }
+    
     /**
      * Authenticate user.
      *
@@ -109,115 +115,65 @@ public class AuthenticationService {
     public boolean authenticate(String userName, String password) {
         log.debug("Authenticating user with LDAP: username: {0}", userName);
 
-        boolean authenticated = false;
-
-        com.codahale.metrics.Timer.Context timerContext = metricService.getTimer(MetricType.OXAUTH_USER_AUTHENTICATION_RATE).time();
-        try {
-            if (this.ldapAuthConfigs == null) {
-                authenticated = localAuthenticate(userName, password);
-            } else {
-                authenticated = externalAuthenticate(userName, password);
-            }
-        } finally {
-            timerContext.stop();
-        }
-
-        MetricType metricType;
-        if (authenticated) {
-            metricType = MetricType.OXAUTH_USER_AUTHENTICATION_SUCCESS;
-        } else {
-            metricType = MetricType.OXAUTH_USER_AUTHENTICATION_FAILURES;
-        }
-
-        metricService.incCounter(metricType);
-
-        return authenticated;
-    }
+        AuthenticationHelper helper = new AuthenticationHelper() {
+        	@Override
+        	public boolean Authenticate(String userName, String password, String orgId) {
+        		if (ldapAuthConfigs == null) {
+                    return localAuthenticate(userName, password);
+                } else {
+                    return externalAuthenticate(userName, password);
+                }
+        	}
+        };
+        
+        return tryToAuthenticate(helper, userName, password, "");
+    }   
     
-
     /**
      * Authenticate user.
      *
      * @param userName The username.
      * @param password The user's password.
-     * @param orgId The organization under which to search.
+     * @param orgId The identifier for the organization under which to search.
      * @return <code>true</code> if success, otherwise <code>false</code>.
      */
     public boolean authenticateForOrg(String userName, String password, String orgId) {
         log.debug("Authenticating user with LDAP: username: {0}, orgId: {1}", userName, orgId);
 
-        boolean authenticated = false;
+        AuthenticationHelper helper = new AuthenticationHelper() {
+        	@Override
+        	public boolean Authenticate(String userName, String password, String orgId) {
+        		boolean authenticated = false;
+        		
+                User user = userService.getUserForOrg(userName, orgId);
+                if (user != null) {
+                    if (!checkUserStatus(user)) {
+                        return false;
+                    }
 
-        com.codahale.metrics.Timer.Context timerContext = metricService.getTimer(MetricType.OXAUTH_USER_AUTHENTICATION_RATE).time();
-        try {
-        	
-            User user = userService.getUserForOrg(userName, orgId);
-            if (user != null) {
-                if (!checkUserStatus(user)) {
-                    return false;
-                }
-
-                // Use local LDAP server for user authentication
-                authenticated = ldapEntryManager.authenticate(user.getDn(), password);
-                if (authenticated) {
-                    credentials.setUser(user);
-                    updateLastLogonUserTime(user);
-                }
-               
-            }
-            
-        } finally {
-            timerContext.stop();
-        }
-
-        MetricType metricType;
-        if (authenticated) {
-            metricType = MetricType.OXAUTH_USER_AUTHENTICATION_SUCCESS;
-        } else {
-            metricType = MetricType.OXAUTH_USER_AUTHENTICATION_FAILURES;
-        }
-
-        metricService.incCounter(metricType);
-
-        return authenticated;
-    }
-    
-    /**
-     * Authenticate user.
-     *
-     * @param userName The username.
-     * @param password The user's password.
-     * @param directoryName The directory under which to search.
-     * @return <code>true</code> if success, otherwise <code>false</code>.
-     */
-    public boolean authenticateInDirectory(String userName, String password, String directoryName) {
-        log.debug("Authenticating user with LDAP: username: {0}, directory name: {1}", userName, directoryName);
-
-        boolean authenticated = false;
-
-        com.codahale.metrics.Timer.Context timerContext = metricService.getTimer(MetricType.OXAUTH_USER_AUTHENTICATION_RATE).time();
-        try {
-        	
-            //    authenticated = localAuthenticate(userName, password);
-
-            User user = userService.getUserInDirectory(userName, directoryName);
-            if (user != null) {
-                if (!checkUserStatus(user)) {
-                    return false;
+                    // Use local LDAP server for user authentication
+                    authenticated = ldapEntryManager.authenticate(user.getDn(), password);
+                    if (authenticated) {
+                        credentials.setUser(user);
+                        updateLastLogonUserTime(user);
+                    }
+                   
                 }
                 
-                // construct from directoryName and inum
-//                String newDn = constructNewUserDn(directoryName, user);
+                return authenticated;
+        	}
+        };
+        
+        return tryToAuthenticate(helper, userName, password, orgId);
+    }
+    
 
-                // Use local LDAP server for user authentication
-                authenticated = ldapEntryManager.authenticate(user.getDn(), password);
-                if (authenticated) {
-                    credentials.setUser(user);
-                    updateLastLogonUserTime(user);
-                }
-               
-            }
-            
+	private boolean tryToAuthenticate(AuthenticationHelper helper, String userName, String password, String orgId) {
+		boolean authenticated = false;
+		
+		com.codahale.metrics.Timer.Context timerContext = metricService.getTimer(MetricType.OXAUTH_USER_AUTHENTICATION_RATE).time();
+        try {
+        	authenticated = helper.Authenticate(userName, password, orgId);
         } finally {
             timerContext.stop();
         }
@@ -230,10 +186,10 @@ public class AuthenticationService {
         }
 
         metricService.incCounter(metricType);
-
+        
         return authenticated;
-    }
-
+	}
+    
     private boolean localAuthenticate(String userName, String password) {
         User user = userService.getUser(userName);
         if (user != null) {
